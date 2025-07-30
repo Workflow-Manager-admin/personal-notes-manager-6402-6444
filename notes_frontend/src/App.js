@@ -1,47 +1,163 @@
-import React, { useState, useEffect } from 'react';
-import logo from './logo.svg';
-import './App.css';
+import React, { useState, useEffect, useCallback } from "react";
+import "./App.css";
+import Header from "./components/Header";
+import Sidebar from "./components/Sidebar";
+import NoteEditor from "./components/NoteEditor";
 
-// PUBLIC_INTERFACE
+/**
+ * PUBLIC_INTERFACE
+ * Main app component for personal notes manager with sidebar, rich note editing, search/filter, and responsive design.
+ */
 function App() {
-  const [theme, setTheme] = useState('light');
+  // Main app state management
 
-  // Effect to apply theme to document element
+  // Notes format: {id, title, content, created, modified}
+  const [notes, setNotes] = useState([]);
+  const [activeId, setActiveId] = useState(null);
+  const [editing, setEditing] = useState(false);
+  const [search, setSearch] = useState("");
+  const [theme, setTheme] = useState("light");
+
+  // On mount, load notes from localStorage if available
   useEffect(() => {
-    document.documentElement.setAttribute('data-theme', theme);
+    const json = window.localStorage.getItem("notes-data");
+    if (json) {
+      try {
+        const arr = JSON.parse(json);
+        setNotes(arr);
+        if (!activeId && arr.length > 0) {
+          setActiveId(arr[0].id);
+        }
+      } catch {
+        setNotes([]);
+      }
+    }
+  }, []);
+
+  // Persist notes to localStorage on any change
+  useEffect(() => {
+    window.localStorage.setItem("notes-data", JSON.stringify(notes));
+  }, [notes]);
+
+  // Effect to sync theme variable on root
+  useEffect(() => {
+    document.documentElement.setAttribute("data-theme", theme);
   }, [theme]);
 
+  // Create a new note and set it active
   // PUBLIC_INTERFACE
-  const toggleTheme = () => {
-    setTheme(prevTheme => prevTheme === 'light' ? 'dark' : 'light');
+  const handleNewNote = useCallback(() => {
+    const newNote = {
+      id: String(Date.now()),
+      title: "",
+      content: "",
+      created: Date.now(),
+      modified: Date.now(),
+    };
+    setNotes([newNote, ...notes]);
+    setActiveId(newNote.id);
+    setEditing(true);
+  }, [notes]);
+
+  // PUBLIC_INTERFACE
+  const handleSelectNote = useCallback(
+    (id) => {
+      setActiveId(id);
+      setEditing(false);
+    },
+    []
+  );
+
+  // PUBLIC_INTERFACE
+  const handleDeleteNote = useCallback(
+    (id) => {
+      let idx = notes.findIndex((n) => n.id === id);
+      if (idx < 0) return;
+      let nextId = notes.length > 1
+        ? notes[(idx + 1) % notes.length].id
+        : null;
+      if (window.confirm("Delete this note?")) {
+        setNotes(notes.filter((n) => n.id !== id));
+        setActiveId(id === activeId ? nextId : activeId);
+        setEditing(false);
+      }
+    },
+    [notes, activeId]
+  );
+
+  // Get currently active note object
+  const activeNote = notes.find((n) => n.id === activeId);
+
+  // PUBLIC_INTERFACE
+  const handleChangeNote = (note) => {
+    setNotes((prev) =>
+      prev.map((n) => (n.id === note.id ? { ...note, modified: Date.now() } : n))
+    );
   };
+
+  // Save changes to note (exit edit mode)
+  // PUBLIC_INTERFACE
+  const handleSave = () => {
+    setEditing(false);
+  };
+
+  // PUBLIC_INTERFACE
+  const handleThemeToggle = () => {
+    setTheme((theme) => (theme === "light" ? "dark" : "light"));
+  };
+
+  // Filter notes with search query (case-insensitive, search in title/content)
+  const filteredNotes = search
+    ? notes.filter(
+        (n) =>
+          n.title?.toLowerCase().includes(search.toLowerCase()) ||
+          n.content?.toLowerCase().includes(search.toLowerCase())
+      )
+    : notes;
+
+  // If there are filteredNotes but activeId is not visible, update.
+  useEffect(() => {
+    if (
+      filteredNotes.length &&
+      !filteredNotes.some((n) => n.id === activeId)
+    ) {
+      setActiveId(filteredNotes[0].id);
+      setEditing(false);
+    }
+  }, [filteredNotes, activeId]);
 
   return (
     <div className="App">
-      <header className="App-header">
-        <button 
-          className="theme-toggle" 
-          onClick={toggleTheme}
-          aria-label={`Switch to ${theme === 'light' ? 'dark' : 'light'} mode`}
-        >
-          {theme === 'light' ? '🌙 Dark' : '☀️ Light'}
-        </button>
-        <img src={logo} className="App-logo" alt="logo" />
-        <p>
-          Edit <code>src/App.js</code> and save to reload.
-        </p>
-        <p>
-          Current theme: <strong>{theme}</strong>
-        </p>
-        <a
-          className="App-link"
-          href="https://reactjs.org"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          Learn React
-        </a>
-      </header>
+      <Header
+        search={search}
+        setSearch={setSearch}
+        onNewNote={handleNewNote}
+        onThemeToggle={handleThemeToggle}
+        theme={theme}
+      />
+      <div className="notes-layout">
+        <Sidebar
+          notes={filteredNotes}
+          activeId={activeId}
+          onSelect={handleSelectNote}
+          onDelete={handleDeleteNote}
+        />
+        <main style={{ flex: 1, background: "var(--bg-primary)" }}>
+          {activeNote ? (
+            <NoteEditor
+              note={activeNote}
+              onChange={handleChangeNote}
+              onSave={handleSave}
+              editing={editing}
+              setEditing={setEditing}
+            />
+          ) : (
+            <div style={{ margin: "2rem", color: "#aaa", fontSize: "1.2rem" }}>
+              <em>Select a note or create a new one to begin.</em>
+            </div>
+          )}
+        </main>
+      </div>
     </div>
   );
 }
